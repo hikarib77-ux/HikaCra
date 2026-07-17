@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ブロック崩し | HikaCra</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#171522; --bg2:#201d30; --ink:#f1eee6; --ink-dim:#a9a4bd;
+    --coral:#e2653f; --outline:#0d0c14;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;background:var(--bg);color:var(--ink);
+    font-family:'Zen Kaku Gothic New',sans-serif; overflow:hidden;}
+  .top{
+    position:fixed; top:0; left:0; right:0; z-index:5;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 18px;
+  }
+  a.back{
+    font-family:'Press Start 2P',monospace; font-size:10px; color:#fff;
+    text-decoration:none; background:var(--bg2); border:3px solid var(--outline);
+    padding:8px 10px; box-shadow:4px 4px 0 var(--outline);
+  }
+  a.back:hover{ transform:translate(-2px,-2px); box-shadow:6px 6px 0 var(--outline); }
+  h1{
+    font-family:'Press Start 2P',monospace; font-size:14px; color:var(--coral);
+    margin:0; text-shadow:2px 2px 0 var(--outline);
+  }
+  .stage{
+    height:100%; display:flex; align-items:center; justify-content:center;
+    padding-top:60px; flex-direction:column; gap:16px;
+  }
+  #wrap{
+    position:relative;
+    background:var(--bg2); border:4px solid var(--outline);
+    box-shadow: 8px 8px 0 var(--outline);
+  }
+  #hud{
+    display:flex; gap:24px; font-family:'Press Start 2P',monospace; font-size:12px;
+  }
+  #hud span b{ color:var(--coral); display:block; font-size:16px; margin-top:6px; }
+  #msg{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    flex-direction:column; gap:14px; background:rgba(10,9,16,0.82);
+    font-family:'Press Start 2P',monospace; color:#fff; text-align:center;
+    display:none;
+  }
+  #msg button{
+    font-family:'Press Start 2P',monospace; font-size:11px; color:#fff;
+    background:#a13f22; border:3px solid var(--outline); padding:10px 14px;
+    cursor:pointer; box-shadow:4px 4px 0 var(--outline);
+  }
+  #msg button:hover{ transform:translate(-2px,-2px); box-shadow:6px 6px 0 var(--outline); }
+  .keys{ font-size:12px; color:var(--ink-dim); }
+</style>
+</head>
+<body>
+  <div class="top">
+    <a class="back" href="index.html">&lt; MENU</a>
+    <h1>ブロック崩し</h1>
+    <span style="width:70px"></span>
+  </div>
+
+  <div class="stage">
+    <div id="hud">
+      <span>SCORE<b id="score">0</b></span>
+      <span>LIVES<b id="lives">3</b></span>
+      <span>STAGE<b id="stage">1</b></span>
+    </div>
+    <div id="wrap">
+      <canvas id="c" width="480" height="480"></canvas>
+      <div id="msg">
+        <div id="msgtext">CLICK / SPACE TO START</div>
+        <button id="msgbtn">START</button>
+      </div>
+    </div>
+    <div class="keys">← → または マウス移動で操作 / SPACE でスタート・再開</div>
+  </div>
+
+<script>
+const cv=document.getElementById('c'), ctx=cv.getContext('2d');
+const W=cv.width, H=cv.height;
+const scoreEl=document.getElementById('score'), livesEl=document.getElementById('lives'), stageEl=document.getElementById('stage');
+const msg=document.getElementById('msg'), msgtext=document.getElementById('msgtext'), msgbtn=document.getElementById('msgbtn');
+
+const PADDLE_W=90, PADDLE_H=14, BALL_R=7;
+const ROWS=6, COLS=8, BRICK_W=52, BRICK_H=20, BRICK_PAD=6, BRICK_TOP=50, BRICK_LEFT=(W-(COLS*(BRICK_W+BRICK_PAD)-BRICK_PAD))/2;
+const PALETTE=['#e2653f','#f2916c','#f2d34b','#6cbf4b','#4bc6d9','#b06be0'];
+
+let paddleX, ball, bricks, score, lives, stageNum, running, launched;
+
+function initBricks(){
+  bricks=[];
+  for(let r=0;r<ROWS;r++){
+    for(let c=0;c<COLS;c++){
+      bricks.push({
+        x: BRICK_LEFT + c*(BRICK_W+BRICK_PAD),
+        y: BRICK_TOP + r*(BRICK_H+BRICK_PAD),
+        w: BRICK_W, h: BRICK_H, alive:true, color: PALETTE[r % PALETTE.length]
+      });
+    }
+  }
+}
+
+function resetBall(){
+  ball = { x: W/2, y: H-40, vx: 0, vy: 0, speed: 4.6 };
+  launched = false;
+}
+
+function resetGame(){
+  paddleX = W/2 - PADDLE_W/2;
+  score=0; lives=3; stageNum=1;
+  scoreEl.textContent=0; livesEl.textContent=3; stageEl.textContent=1;
+  initBricks();
+  resetBall();
+  running=false;
+  showMsg('CLICK / SPACE TO START');
+}
+
+function showMsg(text){
+  msgtext.textContent = text;
+  msg.style.display='flex';
+}
+function hideMsg(){ msg.style.display='none'; }
+
+function launchBall(){
+  const angle = -Math.PI/2 + (Math.random()*0.6 - 0.3);
+  ball.vx = Math.cos(angle)*ball.speed;
+  ball.vy = Math.sin(angle)*ball.speed;
+  launched = true;
+}
+
+function start(){
+  if(!running){
+    running = true;
+    hideMsg();
+    if(!launched) launchBall();
+  }
+}
+
+function loseLife(){
+  lives--; livesEl.textContent=lives;
+  if(lives<=0){
+    running=false;
+    showMsg('GAME OVER  SCORE:'+score);
+  } else {
+    running=false;
+    paddleX = W/2 - PADDLE_W/2;
+    resetBall();
+    showMsg('MISS! SPACE で再開');
+  }
+}
+
+function nextStage(){
+  stageNum++; stageEl.textContent=stageNum;
+  ball.speed = Math.min(9, ball.speed + 0.6);
+  initBricks();
+  resetBall();
+  running=false;
+  showMsg('STAGE '+stageNum+'  SPACE で開始');
+}
+
+function update(){
+  if(running){
+    if(launched){
+      ball.x += ball.vx;
+      ball.y += ball.vy;
+
+      if(ball.x - BALL_R < 0){ ball.x = BALL_R; ball.vx *= -1; }
+      if(ball.x + BALL_R > W){ ball.x = W-BALL_R; ball.vx *= -1; }
+      if(ball.y - BALL_R < 0){ ball.y = BALL_R; ball.vy *= -1; }
+
+      if(ball.y + BALL_R > H){
+        loseLife();
+      }
+
+      // paddle collision
+      const py = H-24;
+      if(ball.vy>0 && ball.y+BALL_R >= py && ball.y+BALL_R <= py+PADDLE_H+8 &&
+         ball.x >= paddleX && ball.x <= paddleX+PADDLE_W){
+        const hit = (ball.x - (paddleX+PADDLE_W/2)) / (PADDLE_W/2);
+        const angle = hit * (Math.PI/3) - Math.PI/2;
+        ball.vx = Math.cos(angle)*ball.speed;
+        ball.vy = Math.sin(angle)*ball.speed;
+        ball.y = py - BALL_R;
+      }
+
+      // bricks
+      let aliveCount=0;
+      bricks.forEach(b=>{
+        if(!b.alive) return;
+        aliveCount++;
+        if(ball.x+BALL_R>b.x && ball.x-BALL_R<b.x+b.w && ball.y+BALL_R>b.y && ball.y-BALL_R<b.y+b.h){
+          b.alive=false;
+          score+=10; scoreEl.textContent=score;
+          const overlapX = Math.min(ball.x+BALL_R-b.x, b.x+b.w-(ball.x-BALL_R));
+          const overlapY = Math.min(ball.y+BALL_R-b.y, b.y+b.h-(ball.y-BALL_R));
+          if(overlapX < overlapY) ball.vx*=-1; else ball.vy*=-1;
+        }
+      });
+      if(aliveCount===0 && running){
+        nextStage();
+      }
+    }
+  }
+}
+
+function draw(){
+  ctx.fillStyle='#171522';
+  ctx.fillRect(0,0,W,H);
+
+  bricks.forEach(b=>{
+    if(!b.alive) return;
+    ctx.fillStyle=b.color;
+    ctx.fillRect(b.x,b.y,b.w,b.h);
+    ctx.strokeStyle='rgba(0,0,0,0.4)'; ctx.lineWidth=2;
+    ctx.strokeRect(b.x,b.y,b.w,b.h);
+  });
+
+  // paddle
+  ctx.fillStyle='#fff';
+  ctx.fillRect(paddleX, H-24, PADDLE_W, PADDLE_H);
+  ctx.strokeStyle='#0d0c14'; ctx.lineWidth=2;
+  ctx.strokeRect(paddleX, H-24, PADDLE_W, PADDLE_H);
+
+  // ball
+  ctx.beginPath();
+  ctx.fillStyle='#e2653f';
+  ctx.arc(ball.x, ball.y, BALL_R, 0, Math.PI*2);
+  ctx.fill();
+  ctx.strokeStyle='#0d0c14'; ctx.lineWidth=2; ctx.stroke();
+
+  if(!launched){
+    ctx.beginPath();
+    ctx.fillStyle='#e2653f';
+    ctx.arc(paddleX+PADDLE_W/2, H-40, BALL_R, 0, Math.PI*2);
+    ctx.fill();
+  }
+}
+
+function loop(){
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+cv.addEventListener('mousemove', e=>{
+  const rect = cv.getBoundingClientRect();
+  const scale = W / rect.width;
+  const x = (e.clientX - rect.left) * scale;
+  paddleX = Math.max(0, Math.min(W-PADDLE_W, x - PADDLE_W/2));
+  if(!launched) ball.x = paddleX + PADDLE_W/2;
+});
+
+document.addEventListener('keydown', e=>{
+  if(e.key==='ArrowLeft') paddleX = Math.max(0, paddleX-24);
+  if(e.key==='ArrowRight') paddleX = Math.min(W-PADDLE_W, paddleX+24);
+  if(!launched){ ball.x = paddleX + PADDLE_W/2; }
+  if(e.code==='Space'){
+    e.preventDefault();
+    if(lives<=0){ resetGame(); start(); }
+    else start();
+  }
+});
+
+cv.addEventListener('click', ()=>{
+  if(lives<=0){ resetGame(); start(); }
+  else start();
+});
+msgbtn.addEventListener('click', ()=>{
+  if(lives<=0){ resetGame(); start(); }
+  else start();
+});
+
+resetGame();
+loop();
+</script>
+</body>
+</html>

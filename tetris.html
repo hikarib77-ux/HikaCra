@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>テトリス | HikaCra</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#171522; --bg2:#201d30; --ink:#f1eee6; --ink-dim:#a9a4bd;
+    --cyan:#4bc6d9; --outline:#0d0c14;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;background:var(--bg);color:var(--ink);
+    font-family:'Zen Kaku Gothic New',sans-serif; overflow:hidden;}
+  .top{
+    position:fixed; top:0; left:0; right:0; z-index:5;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 18px;
+  }
+  a.back{
+    font-family:'Press Start 2P',monospace; font-size:10px; color:#fff;
+    text-decoration:none; background:var(--bg2); border:3px solid var(--outline);
+    padding:8px 10px; box-shadow:4px 4px 0 var(--outline);
+  }
+  a.back:hover{ transform:translate(-2px,-2px); box-shadow:6px 6px 0 var(--outline); }
+  h1{
+    font-family:'Press Start 2P',monospace; font-size:14px; color:var(--cyan);
+    margin:0; text-shadow:2px 2px 0 var(--outline);
+  }
+  .stage{
+    height:100%; display:flex; align-items:center; justify-content:center; gap:28px;
+    flex-wrap:wrap; padding-top:70px;
+  }
+  #board{
+    background:var(--bg2); border:4px solid var(--outline);
+    box-shadow: 8px 8px 0 var(--outline);
+  }
+  .side{
+    width:180px; display:flex; flex-direction:column; gap:16px;
+  }
+  .panel{
+    background:var(--bg2); border:3px solid var(--outline);
+    box-shadow: 5px 5px 0 var(--outline);
+    padding:14px;
+  }
+  .panel h2{
+    font-family:'Press Start 2P',monospace; font-size:10px; color:var(--ink-dim);
+    margin:0 0 10px;
+  }
+  .panel .val{
+    font-family:'Press Start 2P',monospace; font-size:18px; color:#fff;
+  }
+  #next{ display:block; margin:0 auto; }
+  .keys{ font-size:12px; color:var(--ink-dim); line-height:1.9; }
+  .keys b{ color:#fff; }
+  #msg{
+    font-family:'Press Start 2P',monospace; font-size:12px; color:#f2d34b;
+    min-height:18px;
+  }
+  button#restart{
+    font-family:'Press Start 2P',monospace; font-size:10px; color:#fff;
+    background:#2b7f8f; border:3px solid var(--outline); padding:10px;
+    cursor:pointer; box-shadow:4px 4px 0 var(--outline);
+  }
+  button#restart:hover{ transform:translate(-2px,-2px); box-shadow:6px 6px 0 var(--outline); }
+</style>
+</head>
+<body>
+  <div class="top">
+    <a class="back" href="index.html">&lt; MENU</a>
+    <h1>TETRIS</h1>
+    <span style="width:70px"></span>
+  </div>
+
+  <div class="stage">
+    <canvas id="board" width="240" height="480"></canvas>
+    <div class="side">
+      <div class="panel">
+        <h2>NEXT</h2>
+        <canvas id="next" width="100" height="100"></canvas>
+      </div>
+      <div class="panel">
+        <h2>SCORE</h2>
+        <div class="val" id="score">0</div>
+      </div>
+      <div class="panel">
+        <h2>LINES</h2>
+        <div class="val" id="lines">0</div>
+      </div>
+      <div class="panel">
+        <div id="msg"></div>
+        <button id="restart">RETRY</button>
+      </div>
+      <div class="panel keys">
+        <div><b>←→</b> 移動</div>
+        <div><b>↑</b> 回転</div>
+        <div><b>↓</b> 下降</div>
+        <div><b>SPACE</b> 落下</div>
+      </div>
+    </div>
+  </div>
+
+<script>
+const COLS=12, ROWS=24, CELL=20;
+const cv=document.getElementById('board'), ctx=cv.getContext('2d');
+const nx=document.getElementById('next'), nctx=nx.getContext('2d');
+const scoreEl=document.getElementById('score'), linesEl=document.getElementById('lines'), msgEl=document.getElementById('msg');
+
+const COLORS={
+  I:'#4bc6d9', O:'#f2d34b', T:'#b06be0', S:'#6cbf4b', Z:'#e2653f', J:'#3f7ad9', L:'#e29a3f'
+};
+const SHAPES={
+  I:[[0,1],[1,1],[2,1],[3,1]],
+  O:[[1,0],[2,0],[1,1],[2,1]],
+  T:[[1,0],[0,1],[1,1],[2,1]],
+  S:[[1,0],[2,0],[0,1],[1,1]],
+  Z:[[0,0],[1,0],[1,1],[2,1]],
+  J:[[0,0],[0,1],[1,1],[2,1]],
+  L:[[2,0],[0,1],[1,1],[2,1]]
+};
+const KEYS=Object.keys(SHAPES);
+
+let grid, cur, nextType, score, lines, gameOver, dropTimer, dropInterval;
+
+function newGrid(){
+  return Array.from({length:ROWS},()=>Array(COLS).fill(null));
+}
+
+function randType(){ return KEYS[Math.floor(Math.random()*KEYS.length)]; }
+
+function spawn(type){
+  const cells = SHAPES[type].map(([x,y])=>({x:x+4,y:y}));
+  return { type, cells, rot:0 };
+}
+
+function reset(){
+  grid = newGrid();
+  score = 0; lines = 0; gameOver=false; dropInterval=600;
+  scoreEl.textContent=0; linesEl.textContent=0; msgEl.textContent='';
+  nextType = randType();
+  cur = spawn(randType());
+  clearTimeout(dropTimer);
+  loop();
+}
+
+function collide(cells){
+  return cells.some(({x,y})=> x<0||x>=COLS||y>=ROWS||(y>=0 && grid[y][x]));
+}
+
+function rotateCells(cells){
+  // rotate around centroid approx (pivot = 2nd cell)
+  const pivot = cells[1];
+  return cells.map(({x,y})=>{
+    const rx = pivot.x - (y - pivot.y);
+    const ry = pivot.y + (x - pivot.x);
+    return {x:rx, y:ry};
+  });
+}
+
+function tryRotate(){
+  if(cur.type==='O') return;
+  const rotated = rotateCells(cur.cells);
+  if(!collide(rotated)) cur.cells = rotated;
+}
+
+function move(dx,dy){
+  const moved = cur.cells.map(c=>({x:c.x+dx, y:c.y+dy}));
+  if(!collide(moved)){ cur.cells = moved; return true; }
+  return false;
+}
+
+function lockPiece(){
+  cur.cells.forEach(({x,y})=>{ if(y>=0) grid[y][x]=cur.type; });
+  clearLines();
+  cur = spawn(nextType);
+  nextType = randType();
+  if(collide(cur.cells)){
+    gameOver = true;
+    msgEl.textContent = 'GAME OVER';
+  }
+}
+
+function clearLines(){
+  let cleared=0;
+  for(let y=ROWS-1;y>=0;y--){
+    if(grid[y].every(v=>v)){
+      grid.splice(y,1);
+      grid.unshift(Array(COLS).fill(null));
+      cleared++; y++;
+    }
+  }
+  if(cleared>0){
+    const points=[0,100,300,500,800];
+    score += points[cleared] || cleared*250;
+    lines += cleared;
+    scoreEl.textContent = score;
+    linesEl.textContent = lines;
+    dropInterval = Math.max(120, 600 - lines*20);
+  }
+}
+
+function hardDrop(){
+  while(move(0,1)){}
+  lockPiece();
+}
+
+function draw(){
+  ctx.fillStyle = '#171522';
+  ctx.fillRect(0,0,cv.width,cv.height);
+  // settled
+  for(let y=0;y<ROWS;y++){
+    for(let x=0;x<COLS;x++){
+      if(grid[y][x]) drawCell(ctx,x,y,COLORS[grid[y][x]]);
+    }
+  }
+  // current
+  cur.cells.forEach(({x,y})=>{ if(y>=0) drawCell(ctx,x,y,COLORS[cur.type]); });
+
+  // grid lines
+  ctx.strokeStyle='rgba(255,255,255,0.04)';
+  for(let x=0;x<=COLS;x++){ ctx.beginPath(); ctx.moveTo(x*CELL,0); ctx.lineTo(x*CELL,ROWS*CELL); ctx.stroke(); }
+  for(let y=0;y<=ROWS;y++){ ctx.beginPath(); ctx.moveTo(0,y*CELL); ctx.lineTo(COLS*CELL,y*CELL); ctx.stroke(); }
+
+  // next preview
+  nctx.fillStyle='#201d30';
+  nctx.fillRect(0,0,nx.width,nx.height);
+  const shape = SHAPES[nextType];
+  const cellSize=20;
+  shape.forEach(([x,y])=>{
+    nctx.fillStyle = COLORS[nextType];
+    nctx.fillRect(x*cellSize+10, y*cellSize+30, cellSize-2, cellSize-2);
+    nctx.strokeStyle='#0d0c14'; nctx.lineWidth=2;
+    nctx.strokeRect(x*cellSize+10, y*cellSize+30, cellSize-2, cellSize-2);
+  });
+}
+
+function drawCell(c,x,y,color){
+  c.fillStyle=color;
+  c.fillRect(x*CELL+1,y*CELL+1,CELL-2,CELL-2);
+  c.strokeStyle='rgba(0,0,0,0.4)';
+  c.strokeRect(x*CELL+1,y*CELL+1,CELL-2,CELL-2);
+}
+
+function loop(){
+  if(gameOver){ draw(); return; }
+  if(!move(0,1)){
+    lockPiece();
+  }
+  draw();
+  dropTimer = setTimeout(loop, dropInterval);
+}
+
+document.addEventListener('keydown', e=>{
+  if(gameOver) return;
+  if(e.key==='ArrowLeft'){ move(-1,0); draw(); }
+  else if(e.key==='ArrowRight'){ move(1,0); draw(); }
+  else if(e.key==='ArrowDown'){ move(0,1); draw(); }
+  else if(e.key==='ArrowUp'){ tryRotate(); draw(); }
+  else if(e.code==='Space'){ e.preventDefault(); hardDrop(); draw(); }
+});
+
+document.getElementById('restart').addEventListener('click', reset);
+
+reset();
+</script>
+</body>
+</html>
