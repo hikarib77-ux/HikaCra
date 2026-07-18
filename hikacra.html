@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ブロック・ワールド PC本気版</title>
+<style>
+  html, body { margin:0; padding:0; width:100%; height:100%; overflow:hidden; background:#8fc7ef; }
+  * { box-sizing:border-box; }
+  #c { display:block; width:100%; height:100%; cursor:pointer; }
+
+  #crosshair {
+    position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+    width:20px; height:20px; pointer-events:none; z-index:10;
+  }
+  #crosshair::before, #crosshair::after {
+    content:''; position:absolute; background:rgba(255,255,255,0.9); box-shadow:0 0 2px rgba(0,0,0,0.7);
+  }
+  #crosshair::before { left:9px; top:0; width:2px; height:20px; }
+  #crosshair::after { top:9px; left:0; width:20px; height:2px; }
+
+  #hotbar {
+    position:fixed; left:50%; bottom:18px; transform:translateX(-50%);
+    display:flex; gap:6px; z-index:20; background:rgba(0,0,0,0.28); padding:8px; border-radius:10px;
+    border:1px solid rgba(255,255,255,0.15);
+  }
+  .slot {
+    width:46px; height:46px; border-radius:6px; border:2px solid rgba(255,255,255,0.35);
+    background-size:cover; position:relative; image-rendering:pixelated; cursor:pointer;
+  }
+  .slot.sel { border-color:#fff; box-shadow:0 0 10px rgba(255,255,255,0.9); transform:translateY(-3px); }
+  .slot.empty { opacity:0.35; }
+  .slot span { position:absolute; top:1px; left:3px; font-size:10px; color:#fff; font-family:sans-serif; text-shadow:0 1px 2px rgba(0,0,0,0.9); }
+  .slot em { position:absolute; bottom:0; right:2px; font-style:normal; font-size:9px; color:#fff; font-family:sans-serif; text-shadow:0 1px 2px rgba(0,0,0,0.9); }
+  .slot .count { position:absolute; bottom:0; left:2px; font-style:normal; font-size:11px; font-weight:bold; color:#ffe27a; font-family:sans-serif; text-shadow:0 1px 2px rgba(0,0,0,0.9); }
+
+  #topBar { position:fixed; right:16px; top:14px; z-index:20; display:flex; gap:8px; align-items:center; font-family:sans-serif; }
+  #topBar button, #dayIndicator {
+    background:rgba(0,0,0,0.4); color:#fff; border:1px solid rgba(255,255,255,0.35); border-radius:8px;
+    padding:8px 12px; font-family:sans-serif; font-size:12px; cursor:pointer;
+  }
+  #dayIndicator { font-size:16px; cursor:default; }
+
+  #hint {
+    position:fixed; left:16px; top:14px; z-index:20; color:#fff; font-family:sans-serif; font-size:12px;
+    background:rgba(0,0,0,0.32); padding:10px 12px; border-radius:8px; line-height:1.7;
+  }
+  #hint b { color:#ffe27a; }
+
+  #toast {
+    position:fixed; left:50%; bottom:90px; transform:translateX(-50%) translateY(10px);
+    background:rgba(0,0,0,0.75); color:#fff; padding:8px 16px; border-radius:8px;
+    font-family:sans-serif; font-size:13px; z-index:30; opacity:0; pointer-events:none;
+    transition:opacity 0.2s, transform 0.2s;
+  }
+  #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+
+  #startOverlay, #loadingOverlay, #modeOverlay {
+    position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:50;
+    display:flex; align-items:center; justify-content:center; flex-direction:column;
+    color:#fff; font-family:sans-serif; text-align:center; gap:10px;
+  }
+  #startOverlay h1, #loadingOverlay h1, #modeOverlay h1 { margin:0; font-size:26px; letter-spacing:1px; }
+  #startOverlay p, #modeOverlay p { margin:0; font-size:14px; opacity:0.85; max-width:400px; line-height:1.6; }
+  #startOverlay .key { background:rgba(255,255,255,0.15); padding:2px 8px; border-radius:4px; }
+  .hidden { display:none !important; }
+
+  #modeOverlay .modeChoices { display:flex; gap:16px; margin-top:12px; }
+  .modeBtn {
+    width:220px; padding:18px 14px; border-radius:12px; border:2px solid rgba(255,255,255,0.3);
+    background:rgba(255,255,255,0.08); color:#fff; font-family:sans-serif; cursor:pointer;
+    text-align:left; transition:background 0.15s, border-color 0.15s;
+  }
+  .modeBtn:hover { background:rgba(255,255,255,0.18); border-color:#fff; }
+  .modeBtn b { display:block; font-size:16px; margin-bottom:6px; }
+  .modeBtn span { font-size:12px; opacity:0.8; line-height:1.5; }
+
+  #craftPanel {
+    position:fixed; left:50%; top:50%; transform:translate(-50%,-50%);
+    width:min(520px, 90vw); max-height:80vh; overflow-y:auto;
+    background:rgba(20,20,25,0.92); border:1px solid rgba(255,255,255,0.2); border-radius:12px;
+    padding:20px; z-index:40; color:#fff; font-family:sans-serif;
+  }
+  #craftPanel h2 { margin:0 0 12px 0; font-size:18px; }
+  #craftPanel .invRow { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:16px; }
+  #craftPanel .chip { background:rgba(255,255,255,0.1); padding:4px 8px; border-radius:6px; font-size:12px; }
+  #craftPanel .recipeRow {
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:8px 0; border-top:1px solid rgba(255,255,255,0.1); font-size:13px;
+  }
+  #craftPanel .recipeRow button {
+    background:#4a8f4a; color:#fff; border:none; border-radius:6px; padding:6px 14px; cursor:pointer; font-size:12px;
+  }
+  #craftPanel .recipeRow button:disabled { background:#555; opacity:0.5; cursor:not-allowed; }
+  #craftPanel .closeBtn {
+    margin-top:16px; width:100%; padding:8px; border-radius:6px; border:1px solid rgba(255,255,255,0.3);
+    background:rgba(255,255,255,0.1); color:#fff; cursor:pointer;
+  }
+</style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div id="crosshair"></div>
+
+  <div id="hint">
+    <b>WASD</b> 移動　<b>Space</b> ジャンプ（<b>2連打</b>で飛行）<br>
+    <b>Shift</b> ダッシュ／飛行中は降下<br>
+    <b>マウス</b> 視点　<b>左クリック</b> 破壊　<b>右クリック</b> 設置<br>
+    <b>1〜9</b> または <b>ホイール</b> でブロック選択　<b>C</b> でクラフト（サバイバル）
+  </div>
+
+  <div id="topBar">
+    <div id="dayIndicator">☀️</div>
+    <button id="saveBtn">世界を保存</button>
+    <button id="loadBtn">世界を読込</button>
+    <button id="newWorldBtn">新しい世界</button>
+  </div>
+  <input type="file" id="loadInput" accept=".json" style="display:none">
+
+  <div id="hotbar"></div>
+  <div id="toast"></div>
+
+  <div id="modeOverlay">
+    <h1>ブロック・ワールド</h1>
+    <p>モードを選んでください</p>
+    <div class="modeChoices">
+      <button class="modeBtn" id="creativeBtn">
+        <b>🎨 クリエイティブ</b>
+        <span>ブロックは無限。自由に建築・探索できます。採掘にツルハシも不要。</span>
+      </button>
+      <button class="modeBtn" id="survivalBtn">
+        <b>⛏ サバイバル</b>
+        <span>ブロックを採掘して集める必要あり。丸太から板材・棒・ツルハシをクラフトして進めます。石や砂岩の採掘にはツルハシが必要。</span>
+      </button>
+    </div>
+  </div>
+
+  <div id="startOverlay" class="hidden">
+    <h1>ブロック・ワールド</h1>
+    <p>画面をクリックしてマウスをロックし、プレイを再開してください。<span class="key">Esc</span> でいつでも操作を離せます。</p>
+  </div>
+
+  <div id="loadingOverlay">
+    <h1>世界を生成中…</h1>
+    <p>地形・洞窟・木々を計算しています。少しお待ちください。</p>
+  </div>
+
+  <div id="craftPanel" class="hidden"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
